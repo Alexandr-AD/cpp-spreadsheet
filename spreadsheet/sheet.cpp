@@ -31,9 +31,9 @@ void Sheet::SetCell(Position pos, std::string text)
             cells_.at(pos)->InvalidateCache();
         }
         // Сохраняем указатель на оригинальную ячейку
-        auto old_cell = std::move(cells_.at(pos));
-        cells_.erase(pos);
-        cells_.emplace(pos, std::make_unique<Cell>(*this));
+        // auto old_cell = std::move(cells_.at(pos));
+        // cells_.erase(pos);
+        // cells_.emplace(pos, std::make_unique<Cell>(*this));
         try
         {
             cells_[pos]->Set(text);
@@ -41,8 +41,8 @@ void Sheet::SetCell(Position pos, std::string text)
         catch (const CircularDependencyException &)
         {
             // Если была попытка создать цикл, откатываем изменения
-            cells_.erase(pos);
-            cells_.emplace(pos, std::move(old_cell));
+            // cells_.erase(pos);
+            // cells_.emplace(pos, std::move(old_cell));
             throw;
         }
     }
@@ -80,7 +80,17 @@ void Sheet::ClearCell(Position pos)
     // if (static_cast<size_t>(pos.row) < cells_.size() && static_cast<size_t>(pos.col) < cells_[pos.row].size())
     // {
     // cells_[pos.row][pos.col].reset();
-    cells_.erase(pos);
+    if (cells_[pos])
+    {
+        if (cells_[pos]->GetReferencedCells().empty())
+        {
+            cells_.erase(pos);
+        }
+        else
+        {
+            cells_[pos]->Clear();
+        }
+    }
     // }
 }
 

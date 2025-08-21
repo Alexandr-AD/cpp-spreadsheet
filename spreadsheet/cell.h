@@ -16,11 +16,11 @@
 class Cell : public CellInterface
 {
 public:
-    Cell(Sheet &sheet);
+    explicit Cell(Sheet &sheet);
     ~Cell();
 
     // Cell(const Cell &other);
-    Cell &operator=(Cell rhs);
+    // Cell &operator=(Cell rhs);
 
     void Set(std::string text);
     void Clear();

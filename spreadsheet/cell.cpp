@@ -75,6 +75,7 @@ public:
         return dfs(this);
     }
     virtual void InvalidateCache() const = 0;
+    virtual std::unique_ptr<Impl> Clone(Sheet &sheet) const = 0;
 
     void SetText(std::string text)
     {
@@ -111,6 +112,14 @@ public:
     CellInterface::Value GetValue() const override { return CellInterface::Value(); }
     std::string GetText() const override { return ""; }
     std::vector<Position> GetReferencedCells() const override { return {}; }
+    std::unique_ptr<Impl> Clone(Sheet &sheet) const override
+    {
+        auto clone = std::make_unique<EmptyImpl>(sheet);
+        clone->text_ = text_;
+        clone->deps_ = deps_;
+        clone->refs_ = refs_;
+        return clone;
+    }
 
     void InvalidateCache() const override
     {
@@ -140,6 +149,14 @@ public:
     std::vector<Position> GetReferencedCells() const override
     {
         return {};
+    }
+    std::unique_ptr<Impl> Clone(Sheet &sheet) const override
+    {
+        auto clone = std::make_unique<TextImpl>(sheet, text_);
+        clone->text_ = text_;
+        clone->deps_ = deps_;
+        clone->refs_ = refs_;
+        return clone;
     }
     void InvalidateCache() const override
     {
@@ -177,6 +194,14 @@ public:
     std::vector<Position> GetReferencedCells() const override
     {
         return formula_->GetReferencedCells();
+    }
+    std::unique_ptr<Impl> Clone(Sheet &sheet) const override
+    {
+        auto clone = std::make_unique<FormulaImpl>(sheet, text_);
+        clone->text_ = text_;
+        clone->deps_ = deps_;
+        clone->refs_ = refs_;
+        return clone;
     }
     void InvalidateCache() const override
     {
@@ -229,10 +254,8 @@ void Cell::Set(std::string text)
         try
         {
             // Сохраняем текущее состояние для отката
-            auto old_deps = impl_->deps_;
-            auto old_refs = impl_->refs_;
-            auto old_text = impl_->text_;
-            
+            auto old_impl = impl_->Clone(sheet_);
+
             impl_ = std::make_unique<Cell::FormulaImpl>(sheet_, text.substr(1));
 
             auto cells = static_cast<Cell::FormulaImpl *>(impl_.get())->GetReferencedCells();
@@ -240,8 +263,8 @@ void Cell::Set(std::string text)
             {
                 return;
             }
-            
-            // Добавляем зависимости и проверяем на цикл для каждой
+
+            // Добавляем зависимости
             for (auto pos : cells)
             {
                 Cell *cell = static_cast<Cell *>(sheet_.GetCell(pos));
@@ -252,28 +275,26 @@ void Cell::Set(std::string text)
                     cell = static_cast<Cell *>(sheet_.GetCell(pos));
                 }
                 impl_->deps_[pos] = cell;
-                
+
                 // Добавляем обратную ссылку
                 cell->impl_->refs_[pos] = this;
-                
-                // Проверяем на цикл после добавления каждой зависимости
-                if (impl_->HasCycle())
+            }
+
+            // Проверяем на цикл после добавления всех зависимостей
+            if (impl_->HasCycle())
+            {
+                // Если обнаружен цикл, откатываем изменения и бросаем исключение
+                impl_ = std::move(old_impl);
+                // Откатываем обратные ссылки
+                for (auto pos2 : cells)
                 {
-                    // Если обнаружен цикл, откатываем изменения и бросаем исключение
-                    impl_->deps_ = old_deps;
-                    impl_->refs_ = old_refs;
-                    impl_->text_ = old_text;
-                    // Откатываем обратные ссылки
-                    for (auto pos2 : cells)
+                    Cell *cell2 = static_cast<Cell *>(sheet_.GetCell(pos2));
+                    if (cell2)
                     {
-                        Cell *cell2 = static_cast<Cell *>(sheet_.GetCell(pos2));
-                        if (cell2)
-                        {
-                            cell2->impl_->refs_.erase(pos2);
-                        }
+                        cell2->impl_->refs_.erase(pos2);
                     }
-                    throw CircularDependencyException("Circular dependency detected");
                 }
+                throw CircularDependencyException("Circular dependency detected");
             }
         }
         catch (const FormulaException &)
@@ -289,6 +310,9 @@ void Cell::Set(std::string text)
 
 void Cell::Clear()
 {
+    // Сначала сбрасываем impl_, чтобы избежать проблем с циклическими зависимостями
+    // и затем создаем новый EmptyImpl
+    impl_.reset();
     impl_ = std::make_unique<Cell::EmptyImpl>(sheet_);
 }
 
