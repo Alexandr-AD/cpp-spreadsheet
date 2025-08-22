@@ -13,10 +13,10 @@ public:
     Impl(const Impl &other) : text_(other.text_),
                               sheet_(other.sheet_)
     {
-        if (!deps_.empty() && !refs_.empty())
+        if (!refs_.empty() && !deps_.empty())
         {
-            deps_ = other.deps_;
             refs_ = other.refs_;
+            deps_ = other.deps_;
         }
     }
     virtual CellInterface::Value GetValue() const = 0;
@@ -39,6 +39,20 @@ public:
         }
         return refCells;
     }
+    std::vector<Position> GetDependedCells() const
+    {
+        if (deps_.empty())
+        {
+            return {};
+        }
+        std::vector<Position> depCells;
+        depCells.reserve(deps_.size());
+        for (auto dep : deps_)
+        {
+            depCells.push_back(dep.first);
+        }
+        return depCells;
+    }
     bool HasCycle() const
     {
         std::unordered_set<const Impl *> visiting;
@@ -56,7 +70,7 @@ public:
             }
 
             visiting.insert(cell);
-            for (const auto &dep : cell->deps_)
+            for (const auto &dep : cell->refs_)
             {
                 if (dep.second && dep.second->impl_.get())
                 {
@@ -86,19 +100,19 @@ public:
 protected:
     std::unordered_map<Position, Cell *> &GetRefs()
     {
-        return refs_;
+        return deps_;
     }
     std::unordered_map<Position, Cell *> &GetDeps()
     {
-        return deps_;
+        return refs_;
     }
 
 public:
     // std::unique_ptr<Impl> impl_;
     std::string text_;
     Sheet &sheet_;
-    std::unordered_map<Position, Cell *> deps_; // список ячеек, на которые ссылается текущая
-    std::unordered_map<Position, Cell *> refs_; // список ячеек, ссылающихся на эту
+    std::unordered_map<Position, Cell *> refs_; // список ячеек, на которые ссылается текущая
+    std::unordered_map<Position, Cell *> deps_; // список ячеек, ссылающихся на эту
 
     mutable std::optional<FormulaInterface::Value> cache_; // перенести в определения FormulaImpl и тд.
 };
@@ -116,8 +130,8 @@ public:
     {
         auto clone = std::make_unique<EmptyImpl>(sheet);
         clone->text_ = text_;
-        clone->deps_ = deps_;
         clone->refs_ = refs_;
+        clone->deps_ = deps_;
         return clone;
     }
 
@@ -154,8 +168,8 @@ public:
     {
         auto clone = std::make_unique<TextImpl>(sheet, text_);
         clone->text_ = text_;
-        clone->deps_ = deps_;
         clone->refs_ = refs_;
+        clone->deps_ = deps_;
         return clone;
     }
     void InvalidateCache() const override
@@ -199,14 +213,14 @@ public:
     {
         auto clone = std::make_unique<FormulaImpl>(sheet, text_);
         clone->text_ = text_;
-        clone->deps_ = deps_;
         clone->refs_ = refs_;
+        clone->deps_ = deps_;
         return clone;
     }
     void InvalidateCache() const override
     {
         cache_.reset();
-        for (auto ref : refs_)
+        for (auto ref : deps_)
         {
             if (ref.second->impl_->cache_.has_value())
             {
@@ -274,10 +288,10 @@ void Cell::Set(std::string text)
                     sheet_.SetCell(pos, "");
                     cell = static_cast<Cell *>(sheet_.GetCell(pos));
                 }
-                impl_->deps_[pos] = cell;
+                impl_->refs_[pos] = cell;
 
                 // Добавляем обратную ссылку
-                cell->impl_->refs_[pos] = this;
+                cell->impl_->deps_[pos] = this;
             }
 
             // Проверяем на цикл после добавления всех зависимостей
@@ -291,7 +305,7 @@ void Cell::Set(std::string text)
                     Cell *cell2 = static_cast<Cell *>(sheet_.GetCell(pos2));
                     if (cell2)
                     {
-                        cell2->impl_->refs_.erase(pos2);
+                        cell2->impl_->deps_.erase(pos2);
                     }
                 }
                 throw CircularDependencyException("Circular dependency detected");
@@ -343,4 +357,12 @@ std::vector<Position> Cell::GetReferencedCells() const
         return static_cast<Cell::EmptyImpl *>(impl_.get())->GetReferencedCells();
     }
     return impl_->GetReferencedCells();
+}
+std::vector<Position> Cell::GetDependedCells() const
+{
+    if (dynamic_cast<Cell::EmptyImpl *>(impl_.get()))
+    {
+        return static_cast<Cell::EmptyImpl *>(impl_.get())->GetDependedCells();
+    }
+    return impl_->GetDependedCells();
 }

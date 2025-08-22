@@ -26,7 +26,7 @@ void Sheet::SetCell(Position pos, std::string text)
     }
     else
     {
-        if (!cells_.at(pos)->GetReferencedCells().empty())
+        if (!cells_.at(pos)->GetDependedCells().empty())
         {
             cells_.at(pos)->InvalidateCache();
         }
@@ -82,7 +82,7 @@ void Sheet::ClearCell(Position pos)
     // cells_[pos.row][pos.col].reset();
     if (cells_[pos])
     {
-        if (cells_[pos]->GetReferencedCells().empty())
+        if (cells_[pos]->GetDependedCells().empty())
         {
             cells_.erase(pos);
         }

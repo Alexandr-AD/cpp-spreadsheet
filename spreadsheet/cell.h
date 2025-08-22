@@ -28,6 +28,7 @@ public:
     Value GetValue() const override;
     std::string GetText() const override;
     std::vector<Position> GetReferencedCells() const override;
+    std::vector<Position> GetDependedCells() const;
     void InvalidateCache() const;
     // Функция для поиска циклических зависимостей
     bool HasCycle() const;
